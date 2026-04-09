@@ -138,13 +138,14 @@ class MouseMoverApp(ctk.CTk):
 
     def _make_btn(self, parent, text, bg, hover_bg, command):
         """用 CTkFrame+CTkLabel 自制按钮，彻底解决 macOS 文字不居中问题"""
-        import tkinter as tk
+        import sys
+        cursor = "pointinghand" if sys.platform == "darwin" else "hand2"
         frame = ctk.CTkFrame(parent, width=120, height=54,
-                             corner_radius=8, fg_color=bg, cursor="pointinghand")
+                             corner_radius=8, fg_color=bg, cursor=cursor)
         frame.pack_propagate(False)
         label = ctk.CTkLabel(frame, text=text, font=ctk.CTkFont(size=14),
                              text_color="white", fg_color="transparent",
-                             cursor="pointinghand")
+                             cursor=cursor)
         label.place(relx=0.5, rely=0.5, anchor="center")
 
         def on_enter(_):
