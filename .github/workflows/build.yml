@@ -1,0 +1,33 @@
+name: Build Windows EXE
+
+on:
+  push:
+    paths:
+      - 'app.py'
+      - 'requirements.txt'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pyautogui pyinstaller
+
+      - name: Build EXE
+        run: |
+          pyinstaller --onefile --windowed --name "鼠标自动移动工具" app.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MouseMover-Windows
+          path: dist/鼠标自动移动工具.exe
