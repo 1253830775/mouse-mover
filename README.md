@@ -9,7 +9,9 @@
 - `MouseMover-macOS.zip` — macOS 应用（解压后双击运行）
 - `MouseMover.exe` — Windows 可执行文件（直接双击运行）
 
-> macOS 首次运行若提示"无法验证开发者"，前往 系统设置 → 隐私与安全性 → 点"仍要打开"。
+> macOS 首次运行若提示"无法验证开发者"，有两种方式绕过：
+> 1. 右键点击 `.app` → 选"打开" → 弹窗里点"打开"
+> 2. 或在终端执行：`xattr -dr com.apple.quarantine MouseMover.app`
 
 ## 功能
 

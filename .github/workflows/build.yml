@@ -26,6 +26,7 @@ jobs:
       - name: Build macOS app
         run: |
           pyinstaller --onedir --windowed --name "MouseMover" app.py
+          xattr -cr dist/MouseMover.app
           cd dist && zip -r MouseMover-macOS.zip MouseMover.app
 
       - name: Upload macOS artifact
