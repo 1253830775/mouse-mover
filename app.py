@@ -1,179 +1,245 @@
 #!/usr/bin/env python3
-"""
-鼠标自动移动工具 - GUI 版本
-支持 Windows 和 macOS
-"""
-
-import tkinter as tk
-from tkinter import ttk, messagebox
+import customtkinter as ctk
 import threading
 import time
 from datetime import datetime, timedelta
 import pyautogui
 
-# 禁用 pyautogui 的故障保护（移到角落不会停止）
 pyautogui.FAILSAFE = False
 
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
-class MouseMoverApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("鼠标自动移动工具")
-        self.root.resizable(False, False)
+
+class MouseMoverApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("Mouse Mover")
+        self.geometry("360x440")
+        self.resizable(False, False)
 
         self._running = False
-        self._thread = None
         self._target_time = None
+        self._thread = None
 
         self._build_ui()
-        self._center_window()
+        self._center()
 
-    def _center_window(self):
-        self.root.update_idletasks()
-        w, h = self.root.winfo_width(), self.root.winfo_height()
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+    def _center(self):
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() - 360) // 2
+        y = (self.winfo_screenheight() - 440) // 2
+        self.geometry(f"360x440+{x}+{y}")
 
     def _build_ui(self):
-        pad = {"padx": 16}
+        self.grid_columnconfigure(0, weight=1)
 
-        # ── 标题 ──────────────────────────────────────────
-        title = tk.Label(self.root, text="🖱  鼠标自动移动工具",
-                         font=("", 16, "bold"))
-        title.pack(**pad, pady=(16, 4))
+        # 标题
+        ctk.CTkLabel(self, text="🖱  Mouse Mover",
+                     font=ctk.CTkFont(size=22, weight="bold")).pack(pady=(28, 4))
+        ctk.CTkLabel(self, text="防止屏幕锁定，自动移动鼠标",
+                     font=ctk.CTkFont(size=12),
+                     text_color="gray").pack(pady=(0, 20))
 
-        # ── 模式选择 ──────────────────────────────────────
-        mode_frame = ttk.LabelFrame(self.root, text="停止方式", padding=10)
-        mode_frame.pack(fill="x", padx=16, pady=4)
+        # 模式切换
+        self.mode = ctk.StringVar(value="指定时间")
+        seg = ctk.CTkSegmentedButton(self, values=["指定时间", "运行分钟"],
+                                     variable=self.mode,
+                                     command=self._on_mode_change)
+        seg.pack(padx=24, fill="x")
 
-        self.mode = tk.StringVar(value="time")
-
-        r1 = ttk.Radiobutton(mode_frame, text="指定结束时间  (HH:MM)",
-                              variable=self.mode, value="time",
-                              command=self._on_mode_change)
-        r1.grid(row=0, column=0, sticky="w")
-
-        r2 = ttk.Radiobutton(mode_frame, text="运行指定分钟数",
-                              variable=self.mode, value="minutes",
-                              command=self._on_mode_change)
-        r2.grid(row=1, column=0, sticky="w", pady=(4, 0))
-
-        # ── 时间输入 ──────────────────────────────────────
-        input_frame = ttk.LabelFrame(self.root, text="参数设置", padding=10)
-        input_frame.pack(fill="x", padx=16, pady=4)
+        # 卡片容器
+        self.card = ctk.CTkFrame(self, corner_radius=12)
+        self.card.pack(padx=24, pady=16, fill="x")
+        self.card.grid_columnconfigure(1, weight=1)
 
         # 结束时间行
-        self.time_label = ttk.Label(input_frame, text="结束时间:")
-        self.time_label.grid(row=0, column=0, sticky="w")
+        self.time_label = ctk.CTkLabel(self.card, text="结束时间")
+        self.time_label.grid(row=0, column=0, padx=16, pady=14, sticky="w")
 
-        time_entry_frame = tk.Frame(input_frame)
-        time_entry_frame.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.time_row = ctk.CTkFrame(self.card, fg_color="transparent")
+        self.time_row.grid(row=0, column=1, padx=(0, 16), pady=14, sticky="e")
 
-        self.hour_var = tk.StringVar(value="18")
-        self.minute_var = tk.StringVar(value="00")
+        self.hour_var = ctk.StringVar(value="18")
+        self.min_var = ctk.StringVar(value="00")
+        self.hour_entry = ctk.CTkEntry(self.time_row, width=52, textvariable=self.hour_var,
+                                       justify="center")
+        self.hour_entry.pack(side="left")
+        ctk.CTkLabel(self.time_row, text=":", font=ctk.CTkFont(size=16)).pack(side="left", padx=4)
+        self.min_entry = ctk.CTkEntry(self.time_row, width=52, textvariable=self.min_var,
+                                      justify="center")
+        self.min_entry.pack(side="left")
 
-        vcmd = (self.root.register(self._validate_num), "%P", "%W")
-        self.hour_spin = ttk.Spinbox(time_entry_frame, from_=0, to=23, width=4,
-                                     textvariable=self.hour_var,
-                                     validate="key", validatecommand=vcmd,
-                                     format="%02.0f")
-        self.hour_spin.pack(side="left")
-        ttk.Label(time_entry_frame, text=" : ").pack(side="left")
-        self.min_spin = ttk.Spinbox(time_entry_frame, from_=0, to=59, width=4,
-                                    textvariable=self.minute_var,
-                                    validate="key", validatecommand=vcmd,
-                                    format="%02.0f")
-        self.min_spin.pack(side="left")
+        # 分隔线（时间/分钟之间）
+        self.sep1 = ctk.CTkFrame(self.card, height=1, fg_color=("gray80", "gray25"))
+        self.sep1.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12)
 
-        # 分钟数行
-        self.min_label = ttk.Label(input_frame, text="运行分钟:")
-        self.min_label.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        # 运行分钟行
+        self.dur_label = ctk.CTkLabel(self.card, text="运行分钟")
+        self.dur_label.grid(row=2, column=0, padx=16, pady=14, sticky="w")
+        self.dur_var = ctk.StringVar(value="120")
+        self.dur_entry = ctk.CTkEntry(self.card, width=80, textvariable=self.dur_var,
+                                      justify="center")
+        self.dur_entry.grid(row=2, column=1, padx=(0, 16), pady=14, sticky="e")
 
-        self.duration_var = tk.StringVar(value="120")
-        self.duration_spin = ttk.Spinbox(input_frame, from_=1, to=1440, width=6,
-                                         textvariable=self.duration_var)
-        self.duration_spin.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-        ttk.Label(input_frame, text="分钟").grid(row=1, column=2, sticky="w", pady=(8, 0))
+        # 分隔线（分钟/间隔之间）
+        self.sep2 = ctk.CTkFrame(self.card, height=1, fg_color=("gray80", "gray25"))
+        self.sep2.grid(row=3, column=0, columnspan=2, sticky="ew", padx=12)
 
-        # 移动间隔
-        ttk.Label(input_frame, text="移动间隔:").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        self.interval_var = tk.StringVar(value="60")
-        self.interval_spin = ttk.Spinbox(input_frame, from_=10, to=600, width=6,
-                                         textvariable=self.interval_var)
-        self.interval_spin.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-        ttk.Label(input_frame, text="秒").grid(row=2, column=2, sticky="w", pady=(8, 0))
+        # 间隔行
+        ctk.CTkLabel(self.card, text="移动间隔").grid(
+            row=4, column=0, padx=16, pady=14, sticky="w")
+        interval_row = ctk.CTkFrame(self.card, fg_color="transparent")
+        interval_row.grid(row=4, column=1, padx=(0, 16), pady=14, sticky="e")
+        self.interval_var = ctk.StringVar(value="60")
+        ctk.CTkEntry(interval_row, width=60, textvariable=self.interval_var,
+                     justify="center").pack(side="left")
+        ctk.CTkLabel(interval_row, text=" 秒", text_color="gray").pack(side="left")
 
         self._on_mode_change()
 
-        # ── 状态显示 ──────────────────────────────────────
-        status_frame = ttk.LabelFrame(self.root, text="运行状态", padding=10)
-        status_frame.pack(fill="x", padx=16, pady=4)
+        # 状态区
+        self.status_label = ctk.CTkLabel(self, text="未运行",
+                                         font=ctk.CTkFont(size=13),
+                                         text_color="gray")
+        self.status_label.pack(pady=(0, 4))
 
-        self.status_var = tk.StringVar(value="⏸  未运行")
-        status_lbl = ttk.Label(status_frame, textvariable=self.status_var,
-                                font=("", 11))
-        status_lbl.pack(anchor="w")
+        self.remain_label = ctk.CTkLabel(self, text="",
+                                         font=ctk.CTkFont(size=11),
+                                         text_color="gray")
+        self.remain_label.pack(pady=(0, 12))
 
-        self.remain_var = tk.StringVar(value="")
-        remain_lbl = ttk.Label(status_frame, textvariable=self.remain_var,
-                                foreground="gray")
-        remain_lbl.pack(anchor="w")
+        # 日志（默认隐藏）
+        self._log_visible = False
+        log_header = ctk.CTkFrame(self, fg_color="transparent")
+        log_header.pack(padx=24, fill="x")
+        ctk.CTkLabel(log_header, text="日志", font=ctk.CTkFont(size=12),
+                     text_color="gray").pack(side="left")
+        self.log_toggle_btn = ctk.CTkButton(
+            log_header, text="展开 ▾", width=60, height=24,
+            fg_color="transparent", hover_color=("gray85", "gray25"),
+            text_color="gray", font=ctk.CTkFont(size=12),
+            command=self._toggle_log)
+        self.log_toggle_btn.pack(side="right")
 
-        self.log_text = tk.Text(status_frame, height=6, state="disabled",
-                                font=("Courier", 9), bg="#f5f5f5")
-        self.log_text.pack(fill="x", pady=(6, 0))
+        self.log_box = ctk.CTkTextbox(self, height=90, font=ctk.CTkFont(
+            family="Courier", size=11), state="disabled")
+        # 不 pack，默认隐藏
 
-        # ── 按钮 ──────────────────────────────────────────
-        btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=12)
+        # 按钮
+        self.btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        self.btn_row.pack(pady=20)
 
-        self.start_btn = ttk.Button(btn_frame, text="▶  开始", width=12,
-                                    command=self._start)
-        self.start_btn.pack(side="left", padx=6)
+        self.start_btn = self._make_btn(self.btn_row, "开始", "#1f538d", "#1a4a7a", self._start)
+        self.start_btn.pack(side="left", padx=8)
+        self.stop_btn = self._make_btn(self.btn_row, "停止", "#3a3a3a", "#2a2a2a", self._stop)
+        self.stop_btn.pack(side="left", padx=8)
+        self._set_stop_enabled(False)
 
-        self.stop_btn = ttk.Button(btn_frame, text="⏹  停止", width=12,
-                                   command=self._stop, state="disabled")
-        self.stop_btn.pack(side="left", padx=6)
+    def _make_btn(self, parent, text, bg, hover_bg, command):
+        """用 CTkFrame+CTkLabel 自制按钮，彻底解决 macOS 文字不居中问题"""
+        import tkinter as tk
+        frame = ctk.CTkFrame(parent, width=120, height=54,
+                             corner_radius=8, fg_color=bg, cursor="pointinghand")
+        frame.pack_propagate(False)
+        label = ctk.CTkLabel(frame, text=text, font=ctk.CTkFont(size=14),
+                             text_color="white", fg_color="transparent",
+                             cursor="pointinghand")
+        label.place(relx=0.5, rely=0.5, anchor="center")
 
-    # ── 模式切换 ──────────────────────────────────────────
-    def _on_mode_change(self):
-        is_time = self.mode.get() == "time"
-        state_on = "normal"
-        state_off = "disabled"
-        for w in (self.hour_spin, self.min_spin):
-            w.config(state=state_on if is_time else state_off)
-        self.duration_spin.config(state=state_off if is_time else state_on)
+        def on_enter(_):
+            frame.configure(fg_color=hover_bg)
+        def on_leave(_):
+            if frame._fg_color != "#555555":  # disabled color
+                frame.configure(fg_color=frame._normal_bg)
+        def on_click(_):
+            if frame._enabled:
+                command()
 
-    def _validate_num(self, value, widget_name):
-        return value.isdigit() or value == ""
+        frame._normal_bg = bg
+        frame._hover_bg = hover_bg
+        frame._enabled = True
 
-    # ── 日志 ──────────────────────────────────────────────
+        for w in (frame, label):
+            w.bind("<Enter>", on_enter)
+            w.bind("<Leave>", on_leave)
+            w.bind("<Button-1>", on_click)
+
+        frame._label = label
+        return frame
+
+    def _set_stop_enabled(self, enabled):
+        if enabled:
+            self.stop_btn._enabled = True
+            self.stop_btn._normal_bg = "#3a3a3a"
+            self.stop_btn.configure(fg_color="#3a3a3a")
+            self.stop_btn._label.configure(text_color="white")
+        else:
+            self.stop_btn._enabled = False
+            self.stop_btn._normal_bg = "#2a2a2a"
+            self.stop_btn.configure(fg_color="#2a2a2a")
+            self.stop_btn._label.configure(text_color="gray50")
+
+    def _set_start_enabled(self, enabled):
+        if enabled:
+            self.start_btn._enabled = True
+            self.start_btn._normal_bg = "#1f538d"
+            self.start_btn.configure(fg_color="#1f538d")
+            self.start_btn._label.configure(text_color="white")
+        else:
+            self.start_btn._enabled = False
+            self.start_btn._normal_bg = "#163d6b"
+            self.start_btn.configure(fg_color="#163d6b")
+            self.start_btn._label.configure(text_color="gray60")
+
+    def _toggle_log(self):
+        if self._log_visible:
+            self.log_box.pack_forget()
+            self.log_toggle_btn.configure(text="展开 ▾")
+            self.geometry("360x440")
+        else:
+            self.log_box.pack(padx=24, fill="x", before=self.btn_row)
+            self.log_toggle_btn.configure(text="收起 ▴")
+            self.geometry("360x540")
+        self._log_visible = not self._log_visible
+
+    def _on_mode_change(self, val=None):
+        is_time = self.mode.get() == "指定时间"
+        if is_time:
+            self.time_label.grid()
+            self.time_row.grid()
+            self.sep1.grid()
+            self.dur_label.grid_remove()
+            self.dur_entry.grid_remove()
+            self.sep2.grid_remove()
+        else:
+            self.time_label.grid_remove()
+            self.time_row.grid_remove()
+            self.sep1.grid_remove()
+            self.dur_label.grid()
+            self.dur_entry.grid()
+            self.sep2.grid()
+
     def _log(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
-        line = f"[{ts}] {msg}\n"
-        self.log_text.config(state="normal")
-        self.log_text.insert("end", line)
-        self.log_text.see("end")
-        self.log_text.config(state="disabled")
+        self.log_box.configure(state="normal")
+        self.log_box.insert("end", f"[{ts}] {msg}\n")
+        self.log_box.see("end")
+        self.log_box.configure(state="disabled")
 
-    # ── 开始 ──────────────────────────────────────────────
     def _start(self):
-        if self._running:
-            return
-
         try:
             interval = int(self.interval_var.get())
         except ValueError:
-            messagebox.showerror("错误", "移动间隔必须是整数")
+            self._log("❌ 间隔必须是整数")
             return
 
-        if self.mode.get() == "time":
+        if self.mode.get() == "指定时间":
             try:
-                h = int(self.hour_var.get())
-                m = int(self.minute_var.get())
-            except ValueError:
-                messagebox.showerror("错误", "请输入有效的时间")
+                h, m = int(self.hour_var.get()), int(self.min_var.get())
+                assert 0 <= h <= 23 and 0 <= m <= 59
+            except Exception:
+                self._log("❌ 请输入有效时间")
                 return
             now = datetime.now()
             target = now.replace(hour=h, minute=m, second=0, microsecond=0)
@@ -181,77 +247,63 @@ class MouseMoverApp:
                 target += timedelta(days=1)
         else:
             try:
-                minutes = int(self.duration_var.get())
+                target = datetime.now() + timedelta(minutes=int(self.dur_var.get()))
             except ValueError:
-                messagebox.showerror("错误", "请输入有效的分钟数")
+                self._log("❌ 请输入有效分钟数")
                 return
-            target = datetime.now() + timedelta(minutes=minutes)
 
         self._target_time = target
         self._running = True
-        self.start_btn.config(state="disabled")
-        self.stop_btn.config(state="normal")
-        self.status_var.set("▶  运行中...")
-        self._log(f"启动，将运行到 {target.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._set_start_enabled(False)
+        self._set_stop_enabled(True)
+        self.status_label.configure(text="● 运行中", text_color="#1f9e4a")
+        self._log(f"启动，运行至 {target.strftime('%H:%M:%S')}")
 
         self._thread = threading.Thread(target=self._worker,
                                         args=(target, interval), daemon=True)
         self._thread.start()
-        self._update_remain()
+        self._tick()
 
-    # ── 停止 ──────────────────────────────────────────────
     def _stop(self):
         self._running = False
-        self.status_var.set("⏸  已停止")
-        self.remain_var.set("")
-        self.start_btn.config(state="normal")
-        self.stop_btn.config(state="disabled")
-        self._log("用户手动停止")
+        self.status_label.configure(text="已停止", text_color="gray")
+        self.remain_label.configure(text="")
+        self._set_start_enabled(True)
+        self._set_stop_enabled(False)
+        self._log("手动停止")
 
-    # ── 工作线程 ──────────────────────────────────────────
     def _worker(self, target, interval):
         while self._running and datetime.now() < target:
             x, y = pyautogui.position()
             pyautogui.moveTo(x + 10, y + 10, duration=0.2)
             pyautogui.moveTo(x, y, duration=0.2)
-            self.root.after(0, self._log, "鼠标已移动")
-
-            # 分段 sleep，方便响应停止信号
+            self.after(0, self._log, "鼠标已移动 ✓")
             for _ in range(interval * 2):
                 if not self._running:
                     return
                 time.sleep(0.5)
-
         if self._running:
             self._running = False
-            self.root.after(0, self._on_finished)
+            self.after(0, self._on_done)
 
-    def _on_finished(self):
-        self.status_var.set("✅  已完成")
-        self.remain_var.set("")
-        self.start_btn.config(state="normal")
-        self.stop_btn.config(state="disabled")
+    def _on_done(self):
+        self.status_label.configure(text="✅ 已完成", text_color="#1f9e4a")
+        self.remain_label.configure(text="")
+        self._set_start_enabled(True)
+        self._set_stop_enabled(False)
         self._log("已到达目标时间，自动停止")
-        messagebox.showinfo("完成", "鼠标移动任务已完成！")
 
-    # ── 剩余时间刷新 ──────────────────────────────────────
-    def _update_remain(self):
+    def _tick(self):
         if not self._running:
             return
-        remaining = self._target_time - datetime.now()
-        total_sec = int(remaining.total_seconds())
-        if total_sec > 0:
-            h, r = divmod(total_sec, 3600)
+        secs = int((self._target_time - datetime.now()).total_seconds())
+        if secs > 0:
+            h, r = divmod(secs, 3600)
             m, s = divmod(r, 60)
-            self.remain_var.set(f"剩余时间：{h:02d}:{m:02d}:{s:02d}")
-        self.root.after(1000, self._update_remain)
-
-
-def main():
-    root = tk.Tk()
-    app = MouseMoverApp(root)
-    root.mainloop()
+            self.remain_label.configure(text=f"剩余  {h:02d}:{m:02d}:{s:02d}")
+        self.after(1000, self._tick)
 
 
 if __name__ == "__main__":
-    main()
+    app = MouseMoverApp()
+    app.mainloop()

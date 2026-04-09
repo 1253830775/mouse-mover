@@ -1,14 +1,39 @@
-name: Build Windows EXE
+name: Build & Release
 
 on:
   push:
-    paths:
-      - 'app.py'
-      - 'requirements.txt'
-      - '.github/workflows/build.yml'
-  workflow_dispatch:  # 允许手动触发
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Tcl/Tk
+        run: brew install python-tk@3.11
+
+      - name: Install dependencies
+        run: pip install pyautogui pyinstaller customtkinter
+
+      - name: Build macOS app
+        run: |
+          pyinstaller --onedir --windowed --name "MouseMover" app.py
+          cd dist && zip -r MouseMover-macOS.zip MouseMover.app
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MouseMover-macOS
+          path: dist/MouseMover-macOS.zip
+
   build-windows:
     runs-on: windows-latest
     steps:
@@ -20,14 +45,39 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install pyautogui pyinstaller
+        run: pip install pyautogui pyinstaller customtkinter
 
-      - name: Build EXE
+      - name: Build Windows EXE
         run: |
-          pyinstaller --onefile --windowed --name "鼠标自动移动工具" app.py
+          pyinstaller --onefile --windowed --name "MouseMover" app.py
 
-      - name: Upload artifact
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: MouseMover-Windows
-          path: dist/鼠标自动移动工具.exe
+          path: dist/MouseMover.exe
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MouseMover-macOS
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MouseMover-Windows
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            MouseMover-macOS.zip
+            MouseMover.exe
+          generate_release_notes: true
